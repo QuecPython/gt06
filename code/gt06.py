@@ -12,9 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
 """
 @file      :gt06.py
 @author    :Jack Sun (jack.sun@quectel.com)
@@ -27,40 +24,27 @@
 import usys
 import utime
 import _thread
-import osTimer
-from misc import Power
 
 from usr.logging import getLogger
-from usr.common import SocketBase
+from usr.common import TCPUDPBase
 from usr.gt06_msg import GT06MsgParse, T01, T12, T13, T15, T16
 
 logger = getLogger(__name__)
 
 
-class GT06(SocketBase):
+class GT06(TCPUDPBase):
     """This class is option for GT06 protocol."""
 
-    def __init__(self, ip=None, port=None, domain=None, timeout=5, retry_count=3, life_time=180):
+    def __init__(self, ip=None, port=None, domain=None, timeout=5):
         """
         Args:
             ip: server ip address (default: {None})
             port: server port (default: {None})
             domain: server domain (default: {None})
             timeout: socket read data timeout. (default: {5})
-            retry_count: socket send data retry count. (default: {3})
-            life_time: heart beat recycle time. (default: {180})
-            imei: device imei number. (default: {""})
         """
-        super().__init__(ip=ip, port=port, domain=domain, method="TCP")
-        self.__timeout = timeout
-        self.__retry_count = retry_count
-        self.__life_time = life_time
+        super().__init__(ip=ip, port=port, domain=domain, method="TCP", timeout=timeout)
         self.__response_res = {}
-        self.__read_thread = None
-        self.__heart_beat_timer = osTimer()
-        self.__heart_beat_is_running = False
-        self.__power_restart_timer = osTimer()
-        self.__callback = None
         self.__device_status = (0, 0, 0, 0, 0, 0, 0, 0)
 
     def __get_packet_from_message(self, message):
@@ -94,49 +78,6 @@ class GT06(SocketBase):
 
         return packets, message
 
-    def __read_response(self):
-        """This function is downlink thread function.
-
-        Functions:
-            1. receive server response.
-            2. receive server request.
-        """
-        message = b""
-        while True:
-            try:
-                if self.status() not in (0, 1):
-                    logger.error("%s connection status is %s" % (self.__method, self.status()))
-                    break
-
-                # When read data is empty, discard message's data
-                new_msg = self.__read()
-                if new_msg:
-                    message += new_msg
-                else:
-                    message = new_msg
-
-                if message:
-                    self._heart_beat_timer_stop()
-                    packets, message = self.__get_packet_from_message(message)
-
-                    # Parse each packet in order
-                    for msg in packets:
-                        logger.debug("__read_response: %s" % msg)
-                        gt_msg_parse = GT06MsgParse()
-                        if gt_msg_parse.set_msg(msg):
-                            msg_info = gt_msg_parse.get_msg_info()
-                            logger.debug("__read_response msg_info: %s" % msg_info)
-                            if msg_info["protocol_no"] == 0x80:
-                                if self.__callback:
-                                    _thread.start_new_thread(self.__callback, (msg_info,))
-                                else:
-                                    raise OSError("callback funcion is not exists!")
-                            else:
-                                self.__response_res[msg_info["protocol_no"]] = {msg_info["msg_no"]: msg_info}
-
-            except Exception as e:
-                usys.print_exception(e)
-
     def __get_response(self, protocol_no, msg_no):
         """Get server response data.
 
@@ -166,20 +107,6 @@ class GT06(SocketBase):
             utime.sleep_ms(100)
             count += 1
         return response_res
-
-    def __heart_beat(self, args):
-        """Heart beat to server.
-
-        Args:
-            args: useless.
-        """
-        if self.status() == 0:
-            self.report_device_status()
-        else:
-            self._heart_beat_timer_stop()
-
-    def __power_restart(self, args):
-        Power.powerRestart()
 
     def __format_gps_lbs(self, date_time, satellite_num, latitude, longitude, speed, course, lat_ns, lon_ew, gps_onoff, is_real_time,
                          mcc, mnc, lac, cell_id):
@@ -239,47 +166,28 @@ class GT06(SocketBase):
             usys.print_exception(e)
             return ()
 
-    def _downlink_thread_start(self):
-        self.__read_thread = _thread.start_new_thread(self.__read_response, ())
+    def parse(self, message):
+        try:
+            if message:
+                packets, message = self.__get_packet_from_message(message)
 
-    def _downlink_thread_stop(self):
-        if self.__read_thread is not None:
-            _thread.stop_thread(self.__read_thread)
-            self.__read_thread = None
-
-    def _heart_beat_timer_start(self):
-        self.__heart_beat_timer.start(self.__life_time * 1000, 1, self.__heart_beat)
-        self.__heart_beat_is_running = True
-
-    def _heart_beat_timer_stop(self):
-        self.__heart_beat_timer.stop()
-        self.__heart_beat_is_running = False
-
-    def _power_restart_timer_start(self):
-        self.__power_restart_timer.start(2 * 6 * 10 ** 5, 0, self.__power_restart)
-
-    def _power_restart_timer_stop(self):
-        self.__power_restart_timer.stop()
-
-    def connect(self):
-        """Device connect to server.
-
-        While connect failed and retry count greater than 3, start device power restart after 20 munites.
-        If user retry this funcion and connect success, then stop device power restart timer.
-        """
-        try_num = 0
-        conn_res = False
-        while True:
-            conn_res = super().connect()
-            if conn_res:
-                self._heart_beat_timer_stop()
-                break
-            else:
-                try_num += 1
-                if try_num > self.__retry_count:
-                    self._power_restart_timer_start()
-                    break
-        return conn_res
+                # Parse each packet in order
+                for msg in packets:
+                    logger.debug("__read_response: %s" % msg)
+                    gt_msg_parse = GT06MsgParse()
+                    if gt_msg_parse.set_msg(msg):
+                        msg_info = gt_msg_parse.get_msg_info()
+                        logger.debug("__read_response msg_info: %s" % msg_info)
+                        if msg_info["protocol_no"] == 0x80:
+                            if self.__callback:
+                                _thread.start_new_thread(self.__callback, (msg_info,))
+                            else:
+                                raise OSError("callback funcion is not exists!")
+                        else:
+                            self.__response_res[msg_info["protocol_no"]] = {msg_info["msg_no"]: msg_info}
+        except Exception as e:
+            usys.print_exception(e)
+        return message
 
     def send(self, data, protocol_no, msg_no):
         """Send data to server
@@ -303,18 +211,78 @@ class GT06(SocketBase):
 
         return resp_res
 
-    def set_callback(self, callback):
-        """Set callback for server response or request
+    def login(self, imei):
+        """Device login server.
 
         Args:
-            callback(function): user callback function.
+            imei(str): device imei number
 
         Returns:
-            bool: True - success, False - falied.
+            bool: True - success, False - failed.
         """
-        if callable(callback):
-            self.__callback = callback
-            return True
+        up_msg_obj = T01()
+        up_msg_obj.set_imei(imei)
+        msg_no, data = up_msg_obj.get_msg()
+        logger.debug("login data: %s" % data)
+        send_res = self.send(data, 0x01, msg_no)
+        logger.debug("login send res: %s" % send_res)
+        return send_res
+
+    def report_location(self, date_time, satellite_num, latitude, longitude, speed, course, lat_ns, lon_ew, gps_onoff, is_real_time,
+                        mcc, mnc, lac, cell_id, include_device_status=False):
+        """Report GPS and LBS to server.
+
+        Args:
+            date_time(str): This field format is `YYMMDDHHmmss`. .e.g: `220707164353`.
+            satellite_num(int): Satellite numbers. This number is not greater than 15.
+            latitude(float): latitude. unit: degree.
+            longitude(float): longitude. unit: degree.
+            speed(int): unit: km/h.
+            course(int): unit: degree.
+            lat_ns(int): latitude direction.
+                0 - South
+                1 - North
+            lon_ew(int): longitude direction.
+                0 - East
+                1 - Western
+            gps_onoff(int): whether GPS is positioned.
+                0 - not targeted
+                1 - targeted
+            is_real_time(int): real time/Differential GPS
+                0 - real time GPS
+                1 - differential GPS
+            mcc(int): Mobile Country Code
+            mnc(int): Mobile Network Code
+            lac(int): Location Area Code
+            cell_id(int): Cell Tower ID. Range: [0x0001:0xFFFE]
+            include_device_status(bool): Whether to report device status or not.
+                True - report device status together
+                False - not report device status together
+
+        Returns:
+            bool: True - success, False - failed.
+        """
+        _gps_lbs = self.__format_gps_lbs(
+            date_time, satellite_num, latitude, longitude, speed, course, lat_ns, lon_ew, gps_onoff, is_real_time,
+            mcc, mnc, lac, cell_id
+        )
+        if _gps_lbs:
+            _gps, _lbs = _gps_lbs
+            if include_device_status:
+                up_msg_obj = T16()
+                up_msg_obj.set_device_status(*self.__device_status)
+            else:
+                up_msg_obj = T12()
+            up_msg_obj.set_gps(*_gps)
+            up_msg_obj.set_lbs(*_lbs)
+            msg_no, data = up_msg_obj.get_msg()
+            logger.debug("report_location data: %s" % data)
+            if include_device_status:
+                send_res = self.send(data, 0x16, msg_no)
+            else:
+                send_res = self.send(data, None, msg_no)
+            logger.debug("report_location send res: %s" % send_res)
+            return send_res
         return False
 
     def set_device_status(self, defend=0, acc=0, charge=0, alarm=0, gps=0, power=0, voltage_level=0, gsm_signal=0):
@@ -385,83 +353,6 @@ class GT06(SocketBase):
         except Exception as e:
             usys.print_exception(e)
             return False
-
-    def login(self, imei):
-        """Device login server.
-
-        Args:
-            imei(str): device imei number
-
-        Returns:
-            bool: True - success, False - failed.
-        """
-        up_msg_obj = T01()
-        up_msg_obj.set_imei(imei)
-        msg_no, data = up_msg_obj.get_msg()
-        logger.debug("login data: %s" % data)
-        send_res = self.send(data, 0x01, msg_no)
-        logger.debug("login send res: %s" % send_res)
-        if send_res:
-            self._heart_beat_timer_stop()
-            self._heart_beat_timer_start()
-        return send_res
-
-    def report_location(self, date_time, satellite_num, latitude, longitude, speed, course, lat_ns, lon_ew, gps_onoff, is_real_time,
-                        mcc, mnc, lac, cell_id, include_device_status=False):
-        """Report GPS and LBS to server.
-
-        Args:
-            date_time(str): This field format is `YYMMDDHHmmss`. .e.g: `220707164353`.
-            satellite_num(int): Satellite numbers. This number is not greater than 15.
-            latitude(float): latitude. unit: degree.
-            longitude(float): longitude. unit: degree.
-            speed(int): unit: km/h.
-            course(int): unit: degree.
-            lat_ns(int): latitude direction.
-                0 - South
-                1 - North
-            lon_ew(int): longitude direction.
-                0 - East
-                1 - Western
-            gps_onoff(int): whether GPS is positioned.
-                0 - not targeted
-                1 - targeted
-            is_real_time(int): real time/Differential GPS
-                0 - real time GPS
-                1 - differential GPS
-            mcc(int): Mobile Country Code
-            mnc(int): Mobile Network Code
-            lac(int): Location Area Code
-            cell_id(int): Cell Tower ID. Range: [0x0001:0xFFFE]
-            include_device_status(bool): Whether to report device status or not.
-                True - report device status together
-                False - not report device status together
-
-        Returns:
-            bool: True - success, False - failed.
-        """
-        _gps_lbs = self.__format_gps_lbs(
-            date_time, satellite_num, latitude, longitude, speed, course, lat_ns, lon_ew, gps_onoff, is_real_time,
-            mcc, mnc, lac, cell_id
-        )
-        if _gps_lbs:
-            _gps, _lbs = _gps_lbs
-            if include_device_status:
-                up_msg_obj = T16()
-                up_msg_obj.set_device_status(*self.__device_status)
-            else:
-                up_msg_obj = T12()
-            up_msg_obj.set_gps(*_gps)
-            up_msg_obj.set_lbs(*_lbs)
-            msg_no, data = up_msg_obj.get_msg()
-            logger.debug("report_location data: %s" % data)
-            if include_device_status:
-                send_res = self.send(data, 0x16, msg_no)
-            else:
-                send_res = self.send(data, None, msg_no)
-            logger.debug("report_location send res: %s" % send_res)
-            return send_res
-        return False
 
     def report_device_status(self):
         """Report device status to server.

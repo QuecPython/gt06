@@ -1,26 +1,45 @@
-# GT06 客户端功能
+# GT06
 
-## 修订历史
+[中文](./README_ZH.md) | English
 
-| Version |   Date     |   Author   |   Change expression   |
-| :------ | ---------- | ---------- | --------------------- |
-| 1.0.0   | 2022-07-12 | 孙健       | 初始版本               |
+## Introduction
 
-## GT06 介绍
+- GT06 is a universal vehicle GPS positioning communication protocol, implemented based on TCP protocol.
+- This project implements the GT06 protocol **client** function based on QuecPython. Users can directly use this function to interact with the corresponding server within the standard.
 
-### 功能概述
+**Note:**
 
-该项目实现了GT06协议**客户端**功能, 用户可直接使用该功能与对应服务端进行标准内的数据交互。
+- The GT06 protocol stipulates fewer messages. The project only implements basic message functions. Customized messages for different service platforms require secondary development, and extended messages also require interface adjustments.
+- QuecPython does not implement Unicode name escaping, and the message sent by the GT06 server contains unicode encoded data, so it cannot be transferred. Please note here.
 
-### 主要功能
+## Functions
 
-- 服务器连接
-- 终端登录
-- 终端GPS&LBS定位信息上报
-- 终端设备状态信息上报
-- 服务端指令下发与应答
+- Server connection
+- Terminal login
+- Terminal GPS & LBS positioning information reporting
+- Reporting terminal device status information
+- Server command issuance and response
 
-### 备注
+## Usage
 
-- GT06协议规定的消息较少, 该项目只实现了基础的消息功能, 不同的服务平台自定义的消息需要进行二次开发, 扩展的消息也需要进行接口调整。
-- QuecPython未实现Unicode名称转义, 而GT06服务端下发消息中有unicode编码数据, 因此进行无法转移, 此处需要注意。
+- [API Reference Manual](./docs/en/API_Reference.md)
+- [Instruction Manual](./docs/en/Instruction_Manual.md)
+- [Client Example Code](./code/test_gt06.py)
+
+## Contribution
+
+We welcome contributions to improve this project! Please follow these steps to contribute:
+
+1. Fork the repository.
+2. Create a new branch (`git checkout -b feature/your-feature`).
+3. Commit your changes (`git commit -m 'Add your feature'`).
+4. Push to the branch (`git push origin feature/your-feature`).
+5. Open a Pull Request.
+
+## License
+
+This project is licensed under the Apache License. See the [LICENSE](./LICENSE) file for details.
+
+## Support
+
+If you have any questions or need support, please refer to the [QuecPython documentation](https://python.quectel.com/doc/en) or open an issue in this repository.

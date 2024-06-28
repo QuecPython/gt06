@@ -12,9 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
 """
 @file      :test_gt06.py
 @author    :Jack Sun (jack.sun@quectel.com)
@@ -61,8 +58,9 @@ def test_gt06_server_callback(args):
 
 
 def test_gt06_init():
-    ip = "220.180.239.212"
-    port = 7611
+    # Replace it with your own server IP and port.
+    ip = "xxx.xxx.xxx.xxx"
+    port = 31450
     timeout = 5
     retry_count = 3
     life_time = 180
